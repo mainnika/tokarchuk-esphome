@@ -1,0 +1,192 @@
+substitutions:
+  type: sensor
+  name: jarvis
+  area: bedroom
+  full_name: "${area}-${name}-${type}"
+  friendly_name: "Bedroom Jarvis Sensor"
+
+esp32:
+  board: m5stack-atom
+  framework:
+    type: esp-idf
+    version: 4.4.8
+    platform_version: 5.4.0
+
+<<: !include base.yaml
+
+i2s_audio:
+  - id: i2s_audio_bus
+    i2s_lrclk_pin: GPIO33
+    i2s_bclk_pin: GPIO19
+
+microphone:
+  - platform: i2s_audio
+    id: echo_microphone
+    i2s_din_pin: GPIO23
+    adc_type: external
+    pdm: true
+
+speaker:
+  - platform: i2s_audio
+    id: echo_speaker
+    i2s_dout_pin: GPIO22
+    dac_type: external
+    bits_per_sample: 32bit
+    channel: right
+    buffer_duration: 60ms
+
+media_player:
+  - platform: speaker
+    name: None
+    id: echo_media_player
+    announcement_pipeline:
+      speaker: echo_speaker
+      format: WAV
+    codec_support_enabled: false
+    buffer_size: 6000
+    files:
+      - id: timer_finished_wave_file
+        file: https://github.com/esphome/wake-word-voice-assistants/raw/main/sounds/timer_finished.wav
+    on_announcement:
+      - output.turn_on: amp_control
+      - if:
+          condition:
+            - microphone.is_capturing:
+          then:
+            - micro_wake_word.stop:
+            - voice_assistant.stop:
+            - script.execute: reset_led
+      - light.turn_on:
+          id: led
+          blue: 100%
+          red: 0%
+          green: 0%
+          brightness: 100%
+          effect: none
+    on_play:
+      - output.turn_on: amp_control
+    on_idle:
+      - output.turn_off: amp_control
+
+voice_assistant:
+  id: va
+  microphone: echo_microphone
+  media_player: echo_media_player
+  noise_suppression_level: 2
+  auto_gain: 31dBFS
+  volume_multiplier: 2.0
+  on_listening:
+    - light.turn_on:
+        id: led
+        blue: 100%
+        red: 0%
+        green: 0%
+        effect: "Slow Pulse"
+  on_stt_vad_end:
+    - light.turn_on:
+        id: led
+        blue: 100%
+        red: 0%
+        green: 0%
+        effect: "Fast Pulse"
+  on_tts_start:
+    - light.turn_on:
+        id: led
+        blue: 100%
+        red: 0%
+        green: 0%
+        brightness: 100%
+        effect: none
+  on_end:
+    - delay: 100ms
+    - script.execute: start_wake_word
+  on_error:
+    - light.turn_on:
+        id: led
+        red: 100%
+        green: 0%
+        blue: 0%
+        brightness: 100%
+        effect: none
+    - delay: 2s
+    - script.execute: reset_led
+  on_client_connected:
+    - delay: 2s # Give the api server time to settle
+    - script.execute: start_wake_word
+  on_client_disconnected:
+    - voice_assistant.stop:
+    - micro_wake_word.stop:
+
+light:
+  - platform: esp32_rmt_led_strip
+    id: led
+    name: None
+    disabled_by_default: true
+    entity_category: config
+    pin: GPIO27
+    default_transition_length: 0s
+    chipset: SK6812
+    num_leds: 1
+    rgb_order: grb
+    rmt_channel: 0
+    effects:
+      - pulse:
+          name: "Slow Pulse"
+          transition_length: 250ms
+          update_interval: 250ms
+          min_brightness: 50%
+          max_brightness: 100%
+      - pulse:
+          name: "Fast Pulse"
+          transition_length: 100ms
+          update_interval: 100ms
+          min_brightness: 50%
+          max_brightness: 100%
+
+script:
+  - id: reset_led
+    then:
+      - light.turn_on:
+          id: led
+          red: 100%
+          green: 89%
+          blue: 71%
+          brightness: 60%
+          effect: none
+
+  - id: start_wake_word
+    then:
+      - wait_until:
+          and:
+            - media_player.is_idle:
+            - speaker.is_stopped:
+      - voice_assistant.stop
+      - micro_wake_word.stop:
+      - delay: 1s
+      - script.execute: reset_led
+      - script.wait: reset_led
+      - micro_wake_word.start:
+
+output:
+  - platform: gpio
+    pin: GPIO25
+    id: amp_control
+
+micro_wake_word:
+  on_wake_word_detected:
+    then:
+      - media_player.speaker.play_on_device_media_file:
+          media_file: timer_finished_wave_file
+          announcement: true
+      - wait_until:
+          and:
+            - media_player.is_idle:
+            - speaker.is_stopped:
+      - delay: 100ms
+      - voice_assistant.start:
+          wake_word: !lambda return wake_word;
+  vad:
+  models:
+    - model: alexa
+      probability_cutoff: 0.4
+      sliding_window_size: 20
