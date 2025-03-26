@@ -48,7 +48,6 @@ media_player:
       - id: timer_finished_wave_file
         file: https://github.com/esphome/wake-word-voice-assistants/raw/main/sounds/timer_finished.wav
     on_announcement:
-      - output.turn_on: amp_control
       - if:
           condition:
             - microphone.is_capturing:
@@ -63,10 +62,6 @@ media_player:
           green: 0%
           brightness: 100%
           effect: none
-    on_play:
-      - output.turn_on: amp_control
-    on_idle:
-      - output.turn_off: amp_control
 
 voice_assistant:
   id: va
@@ -166,11 +161,6 @@ script:
       - script.execute: reset_led
       - script.wait: reset_led
       - micro_wake_word.start:
-
-output:
-  - platform: gpio
-    pin: GPIO25
-    id: amp_control
 
 micro_wake_word:
   on_wake_word_detected:
