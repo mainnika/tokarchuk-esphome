@@ -1,0 +1,127 @@
+substitutions:
+  type: lamp
+  name: stove
+  area: kitchen
+  full_name: "${area}-${name}-${type}"
+  friendly_name: "Kitchen Light"
+
+esp32:
+  board: esp32-c3-devkitm-1
+  variant: esp32c3
+  framework:
+    type: esp-idf
+
+<<: !include base.yaml
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "cportal-${name}"
+    password: !secret cportal_password
+
+  output_power: 8.5dB
+
+# GPIO input pin
+binary_sensor:
+  - platform: gpio
+    id: stove_lamp_status
+    internal: true  # hide from Home Assistant if not needed
+    pin:
+      number: GPIO20
+      mode:
+        input: true
+        pulldown: true
+    on_press:
+      then:
+        - script.execute: turn_on_ledstrip
+    on_release:
+      then:
+        - script.execute: turn_off_ledstrip
+
+# Define scripts
+script:
+  - id: toggle_stove_lamp_button
+    then:
+      - switch.turn_on: stove_lamp_button
+      - delay: 333ms
+      - switch.turn_off: stove_lamp_button
+  - id: turn_on_ledstrip
+    then:
+      - light.turn_off: led
+      - light.turn_on:
+          id: pwm_light_1
+          brightness: 75%
+      - light.turn_on:
+          id: pwm_light_2
+          brightness: 75%
+  - id: turn_off_ledstrip
+    then:
+      - light.turn_off: pwm_light_1
+      - light.turn_off: pwm_light_2
+  - id: turn_off_non_colored_lights
+    then:
+      - light.turn_off: pwm_light_1
+      - light.turn_off: pwm_light_2
+      - if:
+          condition:
+            - binary_sensor.is_on: stove_lamp_status
+          then:
+            - script.execute: toggle_stove_lamp_button
+
+switch:
+  - platform: template
+    name: "Kitchen Stove Lamp Switch"
+    id: stove_lamp_switch
+    lambda: |-
+      if (id(stove_lamp_status).state) {
+        return true;
+      } else {
+        return false;
+      }
+    turn_on_action:
+      - script.execute: toggle_stove_lamp_button
+    turn_off_action:
+      - script.execute: toggle_stove_lamp_button
+  - platform: gpio
+    pin: GPIO21
+    internal: true
+    id: stove_lamp_button
+  - platform: gpio
+    pin: GPIO3
+    id: ledstrip_power
+    restore_mode: ALWAYS_ON
+
+output:
+  - platform: ledc
+    id: pwm_output_1
+    pin: GPIO1
+  - platform: ledc
+    id: pwm_output_2
+    pin: GPIO2
+
+light:
+  - platform: monochromatic
+    name: "${friendly_name} One"
+    output: pwm_output_1
+    id: pwm_light_1
+    restore_mode: ALWAYS_OFF
+  - platform: monochromatic
+    name: "${friendly_name} Two"
+    output: pwm_output_2
+    id: pwm_light_2
+    restore_mode: ALWAYS_OFF
+
+  - platform: esp32_rmt_led_strip
+    id: led
+    name: "${friendly_name} Colored"
+    pin: GPIO0
+    default_transition_length: 1s
+    chipset: WS2811
+    num_leds: 55
+    rgb_order: rbg
+    on_turn_on:
+      - script.execute: turn_off_non_colored_lights
+
