@@ -121,7 +121,7 @@ light:
     pin: GPIO27
     default_transition_length: 0s
     chipset: SK6812
-    num_leds: 1
+    num_leds: 4
     rgb_order: grb
     rmt_channel: 0
     effects:
