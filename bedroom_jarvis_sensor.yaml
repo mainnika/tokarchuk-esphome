@@ -25,14 +25,16 @@ microphone:
     i2s_din_pin: GPIO23
     adc_type: external
     pdm: true
+    sample_rate: 16000
 
 speaker:
   - platform: i2s_audio
     id: echo_speaker
     i2s_dout_pin: GPIO22
     dac_type: external
-    bits_per_sample: 32bit
-    channel: right
+    bits_per_sample: 16bit
+    sample_rate: 16000
+    channel: stereo  # The Echo has poor playback audio quality when using mon audio
     buffer_duration: 60ms
 
 media_player:
@@ -48,6 +50,7 @@ media_player:
       - id: timer_finished_wave_file
         file: https://github.com/esphome/wake-word-voice-assistants/raw/main/sounds/timer_finished.wav
     on_announcement:
+      - output.turn_on: amp_control
       - if:
           condition:
             - microphone.is_capturing:
@@ -62,6 +65,12 @@ media_player:
           green: 0%
           brightness: 100%
           effect: none
+    on_idle:
+      - output.turn_off: amp_control
+      # - micro_wake_word.start:
+      # - script.execute: reset_led
+    on_play:
+      - output.turn_on: amp_control
 
 voice_assistant:
   id: va
@@ -93,8 +102,20 @@ voice_assistant:
         brightness: 100%
         effect: none
   on_end:
-    - delay: 100ms
-    - script.execute: start_wake_word
+    # Handle the "nevermind" case where there is no announcement
+    # - wait_until:
+    #     condition:
+    #       - media_player.is_announcing:
+    #     timeout: 0.5s
+    # Restart only mWW if enabled; streaming wake words automatically restart
+    - wait_until:
+        - and:
+            - not:
+                voice_assistant.is_running:
+            - not:
+                speaker.is_playing:
+    - micro_wake_word.start:
+    - script.execute: reset_led
   on_error:
     - light.turn_on:
         id: led
@@ -107,7 +128,7 @@ voice_assistant:
     - script.execute: reset_led
   on_client_connected:
     - delay: 2s # Give the api server time to settle
-    - script.execute: start_wake_word
+    - micro_wake_word.start:
   on_client_disconnected:
     - voice_assistant.stop:
     - micro_wake_word.stop:
@@ -121,7 +142,7 @@ light:
     pin: GPIO27
     default_transition_length: 0s
     chipset: SK6812
-    num_leds: 4
+    num_leds: 1
     rgb_order: grb
     rmt_channel: 0
     effects:
@@ -153,20 +174,12 @@ script:
           green: 89%
           blue: 71%
           brightness: 60%
-          effect: "Very Slow Pulse"
+          effect: none
 
-  - id: start_wake_word
-    then:
-      - wait_until:
-          and:
-            - media_player.is_idle:
-            - speaker.is_stopped:
-      - voice_assistant.stop
-      - micro_wake_word.stop:
-      - delay: 1s
-      - script.execute: reset_led
-      - script.wait: reset_led
-      - micro_wake_word.start:
+output:
+  - platform: gpio
+    pin: GPIO25
+    id: amp_control
 
 micro_wake_word:
   on_wake_word_detected:

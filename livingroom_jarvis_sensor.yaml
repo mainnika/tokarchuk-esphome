@@ -25,13 +25,15 @@ microphone:
     i2s_din_pin: GPIO23
     adc_type: external
     pdm: true
+    sample_rate: 16000
 
 speaker:
   - platform: i2s_audio
     id: echo_speaker
     i2s_dout_pin: GPIO22
     dac_type: external
-    bits_per_sample: 32bit
+    bits_per_sample: 16bit
+    sample_rate: 16000
     channel: right
     buffer_duration: 60ms
 
@@ -48,13 +50,12 @@ media_player:
       - id: timer_finished_wave_file
         file: https://github.com/esphome/wake-word-voice-assistants/raw/main/sounds/timer_finished.wav
     on_announcement:
-      - output.turn_on: amp_control
       - if:
           condition:
             - microphone.is_capturing:
           then:
             - micro_wake_word.stop:
-              voice_assistant.stop:
+            - voice_assistant.stop:
             - script.execute: reset_led
       - light.turn_on:
           id: led
@@ -63,10 +64,6 @@ media_player:
           green: 0%
           brightness: 100%
           effect: none
-    on_play:
-      - output.turn_on: amp_control
-    on_idle:
-      - output.turn_off: amp_control
 
 voice_assistant:
   id: va
@@ -126,10 +123,16 @@ light:
     pin: GPIO27
     default_transition_length: 0s
     chipset: SK6812
-    num_leds: 1
+    num_leds: 4
     rgb_order: grb
     rmt_channel: 0
     effects:
+      - pulse:
+          name: "Very Slow Pulse"
+          transition_length: 2500ms
+          update_interval: 2500ms
+          min_brightness: 10%
+          max_brightness: 70%
       - pulse:
           name: "Slow Pulse"
           transition_length: 250ms
@@ -152,7 +155,7 @@ script:
           green: 89%
           blue: 71%
           brightness: 60%
-          effect: none
+          effect: "Very Slow Pulse"
 
   - id: start_wake_word
     then:
@@ -166,11 +169,6 @@ script:
       - script.execute: reset_led
       - script.wait: reset_led
       - micro_wake_word.start:
-
-output:
-  - platform: gpio
-    pin: GPIO25
-    id: amp_control
 
 micro_wake_word:
   on_wake_word_detected:
